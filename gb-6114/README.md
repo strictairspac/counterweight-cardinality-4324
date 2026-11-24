@@ -43,6 +43,19 @@ docker compose up -d --build --wait
 
 选用「counterweights-2411-calibration.json」对应的演示资料，保存一份复演资料，再以默认参数 2 提交。worker 保存结果摘要、业务明细和 SHA-256。复核员登录后在「复检容量证明」签署。
 
+### 中断续跑、实测共用与并发
+
+复检过程按提交时确定的**原批次**（每批 2 个复检号）逐批落库，不再把整批计算放在一个事务里：
+
+- `measurements` 是实测数台账，按 `(case_id, mass, slot_band)` 唯一。同一重量档+槽宽档对应多个复检号时只测一条、共用该实测数；`recheck_items` 为每个复检号保留一行，编号一个不丢。
+- `recheck_batches` / `recheck_items` 持久化原批次与每个复检号的状态。中断、重启 worker 或刷新页面后，`POST /runs/{id}/resume`（另有同义的 `/rerun`）会直接沿用已入库实测，只把未完成的原批次跑完；残留的 `running` 批次也会被重新接管（批次处理幂等）。
+- 两人同时续跑同一执行批次时，`SELECT … FOR UPDATE SKIP LOCKED` 让双方领取不同批次；撞同一批则由批次行锁串行化，后到者看到 `done` 后直接沿用；实测唯一键 + 保存点兜底保证实测数绝不重复。别的执行批次/资料由 worker 与行锁隔离，可继续复检。
+- `POST /runs/{id}/pause` 可在当前批次跑完后协作式中断；`POST /runs/{id}/batches/{batchId}/run` 只复检指定原批次，便于逐批推进与验收。
+- 只有当全部复检号条目都完成时，同一事务才写回 `runs.result/digest` 并把批次置为 `done`；此后 `GET /runs/{id}/export` 与复核员 `POST /runs/{id}/review` 才放行。每个批次仍只有一条签署（`reviews.run_id` 主键），即一份可签核的容量证明。
+
+新增的「FL-2411-SHARE 同档多复检号共用实测」演示资料含 6 个复检号、4 个档位组合，可直接演示共用与分批续跑。`GET /runs/{id}` 返回 `progress`、`batches`、`items`、`measurements` 供页面与验收核对。
+
+
 ## 开发说明
 
 | 部分 | 实现 |

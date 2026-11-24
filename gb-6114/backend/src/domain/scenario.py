@@ -51,9 +51,47 @@ def run(payload, parameter, db):
                 "独立 Q-error": round(base_errors[-1], 3),
                 "联合 Q-error": round(joint_errors[-1], 3),
             })
+    return summarize(rows, base_errors, joint_errors, len(checks))
+
+
+def build_result(payload, parameter, db, stored_counts):
+    """全部复检号都有入库实测数后出结果。
+
+    stored_counts: {(mass, slot): actual_count}，直接沿用，不再重新 COUNT。
+    联合频率仍按校准批次做真实统计。
+    """
+    calibration, inspection, checks = parse(payload)
+    inspection_size = sum(cell.count for cell in inspection)
+    rows = []
+    base_errors = []
+    joint_errors = []
+    with inspection_table(db, calibration, inspection) as table:
+        estimator = JointEstimator(joint_frequencies(db, table), parameter)
+        for check in checks:
+            if (check.mass, check.slot) not in stored_counts:
+                raise ValueError(f"复检号 {check.code} 还没有实测数")
+            actual = stored_counts[(check.mass, check.slot)]
+            independent = float(inspection_size * estimator.independent(check.mass, check.slot))
+            joint = float(inspection_size * estimator.joint(check.mass, check.slot))
+            base_errors.append(q_error(independent, actual))
+            joint_errors.append(q_error(joint, actual))
+            rows.append({
+                "复检号": check.code,
+                "重量档": check.mass,
+                "槽宽档": check.slot,
+                "独立估算": round(independent, 2),
+                "联合估算": round(joint, 2),
+                "数据库实测": actual,
+                "独立 Q-error": round(base_errors[-1], 3),
+                "联合 Q-error": round(joint_errors[-1], 3),
+            })
+    return summarize(rows, base_errors, joint_errors, len(checks))
+
+
+def summarize(rows, base_errors, joint_errors, total):
     base_mean, joint_mean = round(mean(base_errors), 3), round(mean(joint_errors), 3)
     return {
-        "summary": f"已核验 {len(checks)} 条双条件查询。平均 Q-error 从 {base_mean:g} 变为 {joint_mean:g}，最优值为 1。",
+        "summary": f"已核验 {total} 条双条件查询。平均 Q-error 从 {base_mean:g} 变为 {joint_mean:g}，最优值为 1。",
         "metrics": {"实测查询": len(rows), "独立平均误差": base_mean, "联合平均误差": joint_mean},
         "rows": rows,
     }

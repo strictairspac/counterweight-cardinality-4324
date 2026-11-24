@@ -115,3 +115,30 @@ td a[aria-current=true] { font-weight: 750; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* 续跑 / 分批 / 容量证明 */
+.row { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+.muted { color: var(--muted); font-size: .9rem; }
+.progress-line { font-weight: 650; }
+.button-row { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+.action { display: inline-flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.action-error { font-size: .86rem; max-width: 22rem; }
+.code-chips { display: flex; flex-wrap: wrap; gap: .45rem; }
+.chip {
+  font-size: .82rem; padding: .22rem .55rem; border: 1px solid var(--rule);
+  background: var(--paper); border-radius: 999px; white-space: nowrap;
+}
+.chip-done { border-color: var(--accent); color: var(--accent); font-weight: 650; }
+.chip-running { border-left: .2rem solid var(--accent); }
+.chip-pending { color: var(--muted); }
+.batch-codes { font-size: .85rem; color: var(--muted); }
+.certificate { display: grid; }
+.certificate .digest {
+  display: block; background: var(--paper); border: 1px solid var(--rule);
+  padding: .6rem; border-radius: var(--radius); font-size: .82rem;
+}
+.state-paused { color: oklch(.5 .11 75); }
+.state-running { color: var(--accent); }
+@media (max-width: 767px) {
+  .action-error { max-width: 100%; }
+}

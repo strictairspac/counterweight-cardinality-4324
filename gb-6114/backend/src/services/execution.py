@@ -5,33 +5,26 @@ from sqlalchemy import select, update
 
 from src.config.resources import engine
 from src.constants.job_state import JobState
-from src.domain import scenario
-from src.models.cases import cases
 from src.models.runs import runs
+from src.services import inspection
 from src.services.audit import record
-from src.utils.serial import content_digest
 
 logger = logging.getLogger(__name__)
 
 
 def service_one():
-    with engine.begin() as db:
-        statement = (
-            select(runs).where(runs.c.status == JobState.QUEUED).order_by(runs.c.id)
-            .limit(1).with_for_update(skip_locked=True)
-        )
-        task = db.execute(statement).mappings().first()
-        if task is None:
-            return False
-        payload = db.scalar(select(cases.c.payload).where(cases.c.id == task["case_id"]))
-        try:
-            result = scenario.run(payload, task["parameter"], db)
-            output = {"status": JobState.DONE, "result": result, "digest": content_digest(result)}
-        except Exception as exc:
-            # Let the failed database transaction roll back before persisting the error.
-            raise JobFailure(task["id"], exc) from exc
-        finish(db, task["id"], output)
-        return True
+    """领取并处理一个复检批次；处理异常归入对应 run 的 JobFailure。"""
+    claim = inspection.claim_next()
+    if claim is None:
+        return False
+    batch_id, run_id = claim
+    try:
+        outcome = inspection.process_batch(batch_id, actor="worker", skip_locked=True, worker=True)
+    except Exception as exc:
+        raise JobFailure(run_id, exc) from exc
+    if outcome == "locked":
+        return False
+    return True
 
 
 class JobFailure(Exception):
@@ -51,7 +44,7 @@ def fail(job_failure):
         if isinstance(cause, (ValueError, TypeError, KeyError, OverflowError)):
             reason = str(cause) or "输入资料或批次参数不符合要求"
         else:
-            reason = "处理失败，请检查 worker 日志"
+            reason = "处理失败，请检查 worker 日志，或在页面续跑重试"
         finish(db, run_id, {"status": JobState.FAILED, "failure": reason[:320]})
 
 
